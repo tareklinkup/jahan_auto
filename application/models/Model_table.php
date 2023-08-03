@@ -179,6 +179,7 @@ class Model_Table extends CI_Model{
                 select ifnull(sum(sm.SaleMaster_PaidAmount), 0) from tbl_salesmaster sm
                 where sm.SaleMaster_branchid= " . $this->session->userdata('BRANCHid') . "
                 and sm.Status = 'a'
+                and sm.payment_type != 'bank'
                 " . ($date == null ? "" : " and sm.SaleMaster_SaleDate < '$date'") . "
             ) as received_sales,
             (
@@ -243,6 +244,7 @@ class Model_Table extends CI_Model{
             (
                 select ifnull(sum(pm.PurchaseMaster_PaidAmount), 0) from tbl_purchasemaster pm
                 where pm.status = 'a'
+                and pm.payment_type != 'bank'
                 and pm.PurchaseMaster_BranchID= " . $this->session->userdata('BRANCHid') . "
                 " . ($date == null ? "" : " and pm.PurchaseMaster_OrderDate < '$date'") . "
             ) as paid_purchase,

@@ -1346,6 +1346,7 @@ class Account extends CI_Controller {
             join tbl_customer c on c.Customer_SlNo = sm.SalseCustomer_IDNo
             where sm.Status = 'a'
             and sm.SaleMaster_branchid = '$this->brunch'
+            and sm.payment_type != 'bank'
             and sm.SaleMaster_SaleDate between '$data->fromDate' and '$data->toDate'
             
             UNION
@@ -1478,6 +1479,7 @@ class Account extends CI_Controller {
             from tbl_purchasemaster pm 
             join tbl_supplier s on s.Supplier_SlNo = pm.Supplier_SlNo
             where pm.status = 'a'
+            and pm.payment_type != 'bank'
             and pm.PurchaseMaster_BranchID = '$this->brunch'
             and pm.PurchaseMaster_OrderDate between '$data->fromDate' and '$data->toDate'
             

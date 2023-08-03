@@ -64,9 +64,12 @@ class Purchase extends CI_Controller
             s.Supplier_Email,
             s.Supplier_Code,
             s.Supplier_Address,
-            s.Supplier_Type
+            s.Supplier_Type,
+            b.account_id,
+            b.account_name
             from tbl_purchasemaster pm
-            join tbl_supplier s on s.Supplier_SlNo = pm.Supplier_SlNo
+            left join tbl_supplier s on s.Supplier_SlNo = pm.Supplier_SlNo
+            left join tbl_bank_accounts b on b.account_id = pm.account_id
             where pm.PurchaseMaster_BranchID = '$branchId' 
             and pm.status = 'a'
             $purchaseIdClause $clauses
@@ -497,6 +500,8 @@ class Purchase extends CI_Controller
                 'PurchaseMaster_TotalAmount' => $data->purchase->total,
                 'PurchaseMaster_DiscountAmount' => $data->purchase->discount,
                 'PurchaseMaster_Tax' => $data->purchase->vat,
+                'payment_type' => $data->purchase->payment_type,
+                'account_id' => $data->purchase->account_id,
                 'PurchaseMaster_Freight' => $data->purchase->freight,
                 'PurchaseMaster_SubTotalAmount' => $data->purchase->subTotal,
                 'PurchaseMaster_PaidAmount' => $data->purchase->paid,
@@ -526,6 +531,25 @@ class Purchase extends CI_Controller
                 );
 
                 $this->db->insert('tbl_purchasedetails', $purchaseDetails);
+
+                   // bank payment
+            if(isset($data->purchase->account_id)) {
+                $bank = array(
+                    'account_id' => $data->purchase->account_id,
+                    'purchase_id' => $purchaseId,
+                    'transaction_date' => $data->purchase->purchaseDate,
+                    'transaction_type' => 'withdraw',
+                    'amount' => $data->purchase->paid,
+                    'note' => 'purchase amount payment in bank',
+                    'saved_by' =>  $this->session->userdata('userId'),
+                    'saved_datetime' => date('Y-m-d H:i:s'),
+                    'branch_id' => $this->session->userdata('BRANCHid'),
+                    'status' => 1
+                );
+
+                $this->db->insert('tbl_bank_transactions', $bank);
+            }
+            
                 $previousStock = $this->mt->productStock($product->productId);
 
                 $inventoryCount = $this->db->query("select * from tbl_currentinventory where product_id = ? and branch_id = ?", [$product->productId, $this->session->userdata('BRANCHid')])->num_rows();
@@ -612,6 +636,8 @@ class Purchase extends CI_Controller
                 'PurchaseMaster_TotalAmount' => $data->purchase->total,
                 'PurchaseMaster_DiscountAmount' => $data->purchase->discount,
                 'PurchaseMaster_Tax' => $data->purchase->vat,
+                'payment_type' => $data->purchase->payment_type,
+                'account_id' => $data->purchase->account_id,
                 'PurchaseMaster_Freight' => $data->purchase->freight,
                 'PurchaseMaster_SubTotalAmount' => $data->purchase->subTotal,
                 'PurchaseMaster_PaidAmount' => $data->purchase->paid,
@@ -666,6 +692,42 @@ class Purchase extends CI_Controller
                 );
 
                 $this->db->insert('tbl_purchasedetails', $purchaseDetails);
+
+                        if(isset($data->purchase->account_id)) {
+                // check previous payment 
+                $checkBankPayment = $this->db->query("select * from tbl_bank_transactions where purchase_id = ? and branch_id = ? and status = 1", [$salesId, $this->session->userdata('BRANCHid')]);
+                if($checkBankPayment->num_rows() > 0) {
+                    $bank = array(
+                        'account_id' => $data->purchase->account_id,
+                        'purchase_id' => $purchaseId,
+                        'transaction_date' => $data->purchase->purchaseDate,
+                        'transaction_type' => 'withdraw',
+                        'amount' => $data->purchase->paid,
+                        'note' => 'purchase amount payment in bank',
+                        'saved_by' =>  $this->session->userdata('userId'),
+                        'saved_datetime' => date('Y-m-d H:i:s'),
+                        'branch_id' => $this->session->userdata('BRANCHid'),
+                        'status' => 1
+                    );
+            
+                    $this->db->where('purchase_id', $purchaseId)->update('tbl_bank_transactions', $bank);
+                } else {
+                    $bank = array(
+                        'account_id' => $data->purchase->account_id,
+                        'purchase_id' => $purchaseId,
+                        'transaction_date' => $data->purchase->salesDate,
+                        'transaction_type' => 'withdraw',
+                        'amount' => $data->purchase->paid,
+                        'note' => 'purchase amount payment in bank',
+                        'saved_by' =>  $this->session->userdata('userId'),
+                        'saved_datetime' => date('Y-m-d H:i:s'),
+                        'branch_id' => $this->session->userdata('BRANCHid'),
+                        'status' => 1
+                    );
+            
+                    $this->db->insert('tbl_bank_transactions', $bank);
+                }
+            }
 
                 $previousStock = $this->mt->productStock($product->productId);
 
@@ -1154,6 +1216,9 @@ class Purchase extends CI_Controller
 
             /*Delete Purchase Master Data*/
             $this->db->set('status', 'd')->where('PurchaseMaster_SlNo',$data->purchaseId)->update('tbl_purchasemaster');
+
+                        /*Delete Bank Transaction Data*/
+            $this->db->set('status', 0)->where('purchase_id',$data->purchaseId)->update('tbl_bank_transactions');
             
             $res = ['success'=>true, 'message'=>'Successfully deleted'];
         } catch (Exception $ex){
@@ -1605,45 +1670,45 @@ class Purchase extends CI_Controller
     function select_supplier()
     {
         ?>
-        <div class="form-group">
-            <label class="col-sm-2 control-label no-padding-right" for="Supplierid"> Select Supplier </label>
-            <div class="col-sm-3">
-                <select name="Supplierid" id="Supplierid" data-placeholder="Choose a Supplier..." class="chosen-select">
-                    <option value=""></option>
-                    <?php
+<div class="form-group">
+    <label class="col-sm-2 control-label no-padding-right" for="Supplierid"> Select Supplier </label>
+    <div class="col-sm-3">
+        <select name="Supplierid" id="Supplierid" data-placeholder="Choose a Supplier..." class="chosen-select">
+            <option value=""></option>
+            <?php
                     $sql = $this->db->query("SELECT * FROM tbl_supplier where Supplier_brinchid='" . $this->brunch . "' order by Supplier_Name desc");
                     $row = $sql->result();
                     foreach ($row as $row) { ?>
-                        <option value="<?php echo $row->Supplier_SlNo; ?>"><?php echo $row->Supplier_Name; ?>
-                            (<?php echo $row->Supplier_Code; ?>)
-                        </option>
-                    <?php } ?>
-                </select>
-            </div>
-        </div>
-        <?php
+            <option value="<?php echo $row->Supplier_SlNo; ?>"><?php echo $row->Supplier_Name; ?>
+                (<?php echo $row->Supplier_Code; ?>)
+            </option>
+            <?php } ?>
+        </select>
+    </div>
+</div>
+<?php
     }
 
     function select_product()
     {
         ?>
-        <div class="form-group">
-            <label class="col-sm-2 control-label no-padding-right" for="Productid"> Select Product </label>
-            <div class="col-sm-3">
-                <select name="Productid" id="Productid" data-placeholder="Choose a Product..." class="chosen-select">
-                    <option value=""></option>
-                    <?php
+<div class="form-group">
+    <label class="col-sm-2 control-label no-padding-right" for="Productid"> Select Product </label>
+    <div class="col-sm-3">
+        <select name="Productid" id="Productid" data-placeholder="Choose a Product..." class="chosen-select">
+            <option value=""></option>
+            <?php
                     $sql = $this->db->query("SELECT * FROM tbl_product order by Product_Name desc");
                     $row = $sql->result();
                     foreach ($row as $row) { ?>
-                        <option value="<?php echo $row->Product_SlNo; ?>"><?php echo $row->Product_Name; ?>
-                            (<?php echo $row->Product_Code; ?>)
-                        </option>
-                    <?php } ?>
-                </select>
-            </div>
-        </div>
-        <?php
+            <option value="<?php echo $row->Product_SlNo; ?>"><?php echo $row->Product_Name; ?>
+                (<?php echo $row->Product_Code; ?>)
+            </option>
+            <?php } ?>
+        </select>
+    </div>
+</div>
+<?php
     }
 
     public function getPurchaseReturns() {
